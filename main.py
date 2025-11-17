@@ -1,8 +1,14 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, EmailStr
+from typing import List
+from bson import ObjectId
 
-app = FastAPI()
+from database import db, create_document, get_documents
+from schemas import Contactmessage
+
+app = FastAPI(title="Portfolio Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,11 +20,52 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Hello from FastAPI Backend!"}
+    return {"message": "Portfolio API running"}
 
-@app.get("/api/hello")
-def hello():
-    return {"message": "Hello from the backend API!"}
+# Contact endpoint - stores messages in MongoDB
+class ContactIn(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    email: EmailStr
+    subject: str = Field(..., min_length=3, max_length=120)
+    message: str = Field(..., min_length=10, max_length=2000)
+
+@app.post("/api/contact")
+def submit_contact(payload: ContactIn):
+    try:
+        inserted_id = create_document("contactmessage", payload)
+        return {"status": "ok", "id": inserted_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/projects")
+def list_projects() -> List[dict]:
+    """
+    Simple static list of projects for now. You can later move this to DB if needed.
+    """
+    projects = [
+        {
+            "id": "p1",
+            "title": "Smart Attendance System",
+            "tech": ["Python", "OpenCV", "FastAPI"],
+            "description": "Face-recognition based attendance for classrooms.",
+            "link": "#"
+        },
+        {
+            "id": "p2",
+            "title": "Campus Navigator App",
+            "tech": ["React Native", "Maps API"],
+            "description": "Turn-by-turn navigation across campus buildings.",
+            "link": "#"
+        },
+        {
+            "id": "p3",
+            "title": "Placement Tracker",
+            "tech": ["MongoDB", "React", "Express"],
+            "description": "Track job applications, interviews and offers.",
+            "link": "#"
+        }
+    ]
+    return projects
 
 @app.get("/test")
 def test_database():
@@ -31,39 +78,31 @@ def test_database():
         "connection_status": "Not Connected",
         "collections": []
     }
-    
+
     try:
-        # Try to import database module
-        from database import db
-        
         if db is not None:
             response["database"] = "✅ Available"
             response["database_url"] = "✅ Configured"
             response["database_name"] = db.name if hasattr(db, 'name') else "✅ Connected"
             response["connection_status"] = "Connected"
-            
-            # Try to list collections to verify connectivity
+
             try:
                 collections = db.list_collection_names()
-                response["collections"] = collections[:10]  # Show first 10 collections
+                response["collections"] = collections[:10]
                 response["database"] = "✅ Connected & Working"
             except Exception as e:
                 response["database"] = f"⚠️  Connected but Error: {str(e)[:50]}"
         else:
             response["database"] = "⚠️  Available but not initialized"
-            
-    except ImportError:
-        response["database"] = "❌ Database module not found (run enable-database first)"
+
     except Exception as e:
         response["database"] = f"❌ Error: {str(e)[:50]}"
-    
-    # Check environment variables
+
     import os
     response["database_url"] = "✅ Set" if os.getenv("DATABASE_URL") else "❌ Not Set"
     response["database_name"] = "✅ Set" if os.getenv("DATABASE_NAME") else "❌ Not Set"
-    
-    return response
 
+    return response
 
 if __name__ == "__main__":
     import uvicorn
